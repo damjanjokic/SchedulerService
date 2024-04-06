@@ -21,7 +21,7 @@ public class Appointment
     [BsonElement("organiser_id"), BsonRepresentation(BsonType.Binary)]
     public Guid OrganiserId { get; set; }
     [BsonElement("organiser_approval_pending"), BsonRepresentation(BsonType.Boolean)]
-    public bool OrganiserApprovalPending { get; set; }
+    public bool OrganiserConfirmationPending { get; set; }
     [BsonElement("set"), BsonRepresentation(BsonType.Boolean)]
     public bool Set { get; set; }
     [BsonElement("attendees")]
