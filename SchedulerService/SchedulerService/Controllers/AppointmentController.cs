@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using SchedulerService.Contracts;
 using SchedulerService.Data;
 using SchedulerService.Dto;
 using SchedulerService.Entities;
@@ -12,94 +13,68 @@ namespace SchedulerService.Controllers;
 [ApiController]
 public class AppointmentController : ControllerBase
 {
-    private readonly IMongoCollection<Appointment> _appointments;
-    private readonly IMapper _mapper;
-    public AppointmentController(MongoDbService mongoDbService, IMapper mapper)
+    private readonly IAppointmentService _appointmentService;
+    
+    public AppointmentController(IAppointmentService appointmentService)
     {
-        _mapper = mapper;
-        _appointments = mongoDbService.Database?.GetCollection<Appointment>("appointment");
+        _appointmentService = appointmentService;
     }
-
-    [HttpGet]
-    public async Task<IEnumerable<Appointment>> Get()
-    {
-        return await _appointments.Find(FilterDefinition<Appointment>.Empty).ToListAsync();
-    }
+    
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<Appointment>> GetById(ObjectId id)
+    public async Task<IActionResult> GetById(ObjectId id)
     {
-        var filter = Builders<Appointment>.Filter.Eq(x => x.Id, id);
-        var appointment = await _appointments.Find(filter).FirstOrDefaultAsync();
-        var appointmetDto = _mapper.Map<AppointmentDto>(appointment);
-        return appointmetDto is not null ? Ok(appointmetDto) : NotFound();
+        var appointment = await _appointmentService.GetById(id);
+        
+        if (appointment == null)
+            return NotFound();
+        
+        return Ok(appointment);
     }
     
-    [HttpGet("{userId}")]
-    public async Task<ActionResult<IEnumerable<Appointment>>> GetAllAppointmentsByUserId(Guid userId)
+    [HttpGet("getAppointmentsForUser/{userId}")]
+    public async Task<IActionResult> GetAllAppointmentsByUserId(Guid userId)
     {
-        var filter = Builders<Appointment>.Filter.Eq(x => x.OrganiserId, userId);
-        var appointments = await _appointments.Find(filter).ToListAsync();
-        var appointmetsDto = _mapper.Map<List<AppointmentDto>>(appointments);
-        return appointmetsDto is not null ? Ok(appointmetsDto) : NotFound();
+        var appointments = await _appointmentService.GetAllByUserId(userId);
+        
+        if (!appointments.Any())
+            return NotFound();
+        
+        return Ok(appointments);
     }
     
-    [HttpGet("{userId}")]
-    public async Task<ActionResult<IEnumerable<Appointment>>> GetAppointmentsWaitingForConfirmation(Guid userId)
+    [HttpGet("getPendingAppointmentsForUser/{userId}")]
+    public async Task<IActionResult> GetPendingAppointmentsForUser(Guid userId)
     {
-        var filter = Builders<Appointment>.Filter.Eq(x => x.OrganiserId, userId) &
-                     Builders<Appointment>.Filter.Eq(x => x.OrganiserConfirmationPending, true) &
-                     Builders<Appointment>.Filter.Eq(x => x.Set, false);
+
+        var appointments = await _appointmentService.GetPendingAppointmentsForUser(userId);
         
-        var appointments = await _appointments.Find(filter).ToListAsync();
-        var appointmetsDto = _mapper.Map<List<AppointmentDto>>(appointments);
+        if (!appointments.Any())
+            return NotFound();
         
-        return appointmetsDto is not null ? Ok(appointmetsDto) : NotFound();
+        return Ok(appointments);
     }
 
     [HttpPost]
-    public async Task<ActionResult> Post(CreateAppointmentDto createAppointmentDto)
+    public async Task<ActionResult> CreateAppointment(CreateAppointmentDto createAppointmentDto)
     {
-        var appointment = _mapper.Map<Appointment>(createAppointmentDto);
-        appointment.Id = ObjectId.GenerateNewId();
-        if (appointment.Attendees.Contains(appointment.OrganiserId))
-        {
-            appointment.OrganiserConfirmationPending = false;
-            appointment.Set = true;
-        }
-        await _appointments.InsertOneAsync(appointment);
-        return Ok(appointment.Id);
-    }
-
-    [HttpPut]
-    public async Task<ActionResult> ScheduleAppointment(ScheduleAppointmentDto scheduleAppointmentDto)
-    {
-        var filter = Builders<Appointment>.Filter.Eq(x => x.Id, scheduleAppointmentDto.Id) &
-                     Builders<Appointment>.Filter.Eq(x => x.OrganiserConfirmationPending, false) &
-                     Builders<Appointment>.Filter.Eq(x => x.Set, false);
-
-        var update = Builders<Appointment>.Update
-            .Set(x => x.Description, scheduleAppointmentDto.Description)
-            .Set(x => x.Attendees, scheduleAppointmentDto.Attendees)
-            .Set(x => x.OrganiserConfirmationPending, true);
-        await _appointments.UpdateOneAsync(filter, update);
-
+        await _appointmentService.CreateApointment(createAppointmentDto);
         return Ok();
     }
 
-    [HttpPut]
+    [HttpPut("scheduleAppointment")]
+    public async Task<ActionResult> ScheduleAppointment(ScheduleAppointmentDto scheduleAppointmentDto)
+    {
+
+        await _appointmentService.ScheduleAppointment(scheduleAppointmentDto);
+        return Ok();
+    }
+
+    [HttpPut("confirmAppointment")]
     public async Task<IActionResult> ConfirmAppointment(ConfirmAppointmentDto confirmAppointmentDto)
     {
-        var filter = Builders<Appointment>.Filter.Eq(x => x.Id, confirmAppointmentDto.AppointmentId) &
-                     Builders<Appointment>.Filter.Eq(x => x.OrganiserId, confirmAppointmentDto.UserId) &
-                     Builders<Appointment>.Filter.Eq(x => x.OrganiserConfirmationPending, true);
-                     Builders<Appointment>.Filter.Eq(x => x.Set, false); 
-        
-        var update = Builders<Appointment>.Update
-            .Set(x => x.OrganiserConfirmationPending, false)
-            .Set(x => x.Set, true);
-        await _appointments.UpdateOneAsync(filter, update);
 
+        await _appointmentService.ConfirmAppointment(confirmAppointmentDto);
         return Ok();
     }
 
